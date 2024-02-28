@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+
+CACHE=./.mvndelta-cache
+if [ ! -f "$CACHE" ]; then
+    find . -name pom.xml -type f -print | grep -v '/target/' | xargs dirname | sort -ru | cut -c3- > "$CACHE"
+fi
+mvn_modules=$(cat "$CACHE")
+declare -a changed_mvn_modules=()
+
+changed_files=$(git diff HEAD~1 --name-only)
+previous_module=""
+for file in $changed_files ; do
+  changed_folder=$(dirname $file)
+  for mvn_module in $mvn_modules ; do
+    if [[ $changed_folder == $mvn_module* ]] ;
+    then
+      if [[ $mvn_module == $previous_module ]] ;
+      then
+        break
+      fi
+      changed_mvn_modules+=( "$mvn_module" )
+      previous_module="$mvn_module"
+      break 
+    fi
+  done
+done
+modules_arg=""
+first=true
+for changed_mvn_module in ${changed_mvn_modules[@]} ; do
+  module=$(yq '[.project.groupId,.project.artifactId] | join(":")' "$changed_mvn_module/pom.xml")
+  if $first ;
+  then
+    modules_arg="-pl $module"
+    first=false
+  else 
+    modules_arg="$modules_arg,$module"
+  fi
+done
+echo "Executing mvn $* on $modules_arg"
+mvn $modules_arg $*
+
